@@ -86,6 +86,16 @@ func Definition(ctx context.Context, snapshot *cache.Snapshot, fh file.Handle, p
 		return builtinDefinition(ctx, snapshot, obj)
 	}
 
+	f := pkg.FileSet().File(obj.Pos())
+	adjPos := f.Position(obj.Pos())
+	if adjPos.Filename != f.Name() {
+		loc, err := mapAdjustedPosition(ctx, snapshot, adjPos)
+		if err != nil {
+			return nil, err
+		}
+		return []protocol.Location{loc}, nil
+	}
+
 	// Finally, map the object position.
 	loc, err := mapPosition(ctx, pkg.FileSet(), snapshot, obj.Pos(), adjustedObjEnd(obj))
 	if err != nil {
@@ -307,4 +317,25 @@ func mapPosition(ctx context.Context, fset *token.FileSet, s file.Source, start,
 	}
 	m := protocol.NewMapper(fh.URI(), content)
 	return m.PosLocation(file, start, end)
+}
+
+func mapAdjustedPosition(ctx context.Context, s file.Source, pos token.Position) (protocol.Location, error) {
+	uri := protocol.URIFromPath(pos.Filename)
+	fh, err := s.ReadFile(ctx, uri)
+	if err != nil {
+		return protocol.Location{}, err
+	}
+	content, err := fh.Content()
+	if err != nil {
+		return protocol.Location{}, err
+	}
+	m := protocol.NewMapper(fh.URI(), content)
+	return m.RangeLocation(protocol.Range{
+		Start: protocol.Position{
+			Line: uint32(pos.Line) - 1,
+		},
+		End: protocol.Position{
+			Line: uint32(pos.Line) - 1,
+		},
+	}), nil
 }
